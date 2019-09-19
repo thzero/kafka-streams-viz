@@ -1,35 +1,53 @@
+const DEBUG = false;
+const DEFAULT_LABEL = "Kafka Streams Topology";
+const DISPLAY_TYPE_D3 = "d3";
+const DISPLAY_TYPE_STANDARD = "std";
+const DEFAULT_DISPLAY_TYPE = DISPLAY_TYPE_STANDARD;
+const STORAGE_KEY = 'kafka-streams-topology-visualization';
+
+let _data = {};
+var _displayType = DEFAULT_DISPLAY_TYPE;
+var _pending;
+
+function changeDisplayType() {
+	_displayType = displayType.value;
+	_data.displayType = _displayType;
+	store();
+
+	scheduleUpdate();
+}
+
+function clear() {
+	label.value = '';
+	input.value = '';
+	scheduleUpdate();
+}
+
 /**
  * @author zz85 (https://github.com/zz85 | https://twitter.com/blurspline)
  */
-
-const DEBUG = false;
-const STORAGE_KEY = 'kafka-streams-viz';
-
-function processName(name) {
-	return name.replace(/-/g, '-\\n');
-}
-
-// converts kafka stream ascii topo description to DOT language
-function convertTopoToDot(topo) {
-	var lines = topo.split('\n');
-	var results = [];
-	var outside = [];
-	var stores = new Set();
-	var topics = new Set();
-	var entityName;
+// converts kafka stream ascii topology description to DOT language
+function convertTopologyToDot(topology, label) {
+	let lines = topology.split('\n');
+	let results = [];
+	let outside = [];
+	let stores = new Set();
+	let topics = new Set();
+	let entityName;
 
 	// dirty but quick parsing
+	let sub;
+	let match;
 	lines.forEach(line => {
-		var sub = /Sub-topology: ([0-9]*)/;
-		var match = sub.exec(line);
+		sub = /Sub-topology: ([0-9]*)/;
+		match = sub.exec(line);
 
 		if (match) {
-			if (results.length) 
+			if (results.length)
 				results.push(`}`);
-				
+
 			results.push(`subgraph cluster_${match[1]} {
 	label = "${match[0]}";
-
 	style=filled;
 	color=lightgrey;
 	node [style=filled,color=white];
@@ -41,12 +59,12 @@ function convertTopoToDot(topo) {
 		match = /(Source\:|Processor\:|Sink:)\s+(\S+)\s+\((topics|topic|stores)\:(.*)\)/.exec(line)
 
 		if (match) {
-			entityName = processName(match[2]);
-			var type = match[3]; // source, processor or sink
-			var linkedNames = match[4];
+			entityName = convertTopologyToDotProcessName(match[2]);
+			let type = match[3]; // source, processor or sink
+			let linkedNames = match[4];
 			linkedNames = linkedNames.replace(/\[|\]/g, '');
 			linkedNames.split(',').forEach(linkedName => {
-				linkedName = processName(linkedName.trim());
+				linkedName = convertTopologyToDotProcessName(linkedName.trim());
 
 				if (linkedName === '') {
 					// short circuit
@@ -73,10 +91,11 @@ function convertTopoToDot(topo) {
 		match = /\-\-\>\s+(.*)$/.exec(line);
 
 		if (match && entityName) {
-			var targets = match[1];
+			let targets = match[1];
+			let linkedName;
 			targets.split(',').forEach(name => {
-				var linkedName = processName(name.trim());
-				if (linkedName === 'none') 
+				linkedName = convertTopologyToDotProcessName(name.trim());
+				if (linkedName === 'none')
 					return;
 
 				results.push(`"${entityName}" -> "${linkedName}";`);
@@ -84,7 +103,7 @@ function convertTopoToDot(topo) {
 		}
 	})
 
-	if (results.length) 
+	if (results.length)
 		results.push(`}`);
 
 	results = results.concat(outside);
@@ -99,29 +118,153 @@ function convertTopoToDot(topo) {
 
 	return `
 digraph G {
-	label = "Kafka Streams Topology"
+	label = ` + label + `
 
 	${results.join('\n')}
 }
+	`;
+}
+
+function convertTopologyToDotProcessName(name) {
+	return name.replace(/-/g, '-\\n');
+}
+
+function initialize() {
+	read();
+
+	let topology = _data.topology;
+	if (!topology || (topology === "")) {
+		reset();
+		return;
+	}
+	
+	let labelValue = _data.label;
+	if (!labelValue || (labelValue === ""))
+		labelValue = '';
+		
+	let displayTypeValue = _data.displayType;
+	if (!displayTypeValue || (displayTypeValue === ""))
+		displayTypeValue = DEFAULT_DISPLAY_TYPE;
+
+	displayType.value = displayTypeValue;
+	input.value = topology;
+	label.value = labelValue;
+}
+
+function read() {
+	let data = sessionStorage.getItem(STORAGE_KEY);
+	try {
+		_data = JSON.parse(data);
+	}
+	catch (ex) {
+	}
+
+	if (!_data) {
+		_data = {
+			displayType: DEFAULT_DISPLAY_TYPE,
+			label: DEFAULT_LABEL,
+			topology: null
+		};
+	}
+}
+
+function reset() {
+	let defaultTopology = `
+Topology
+Sub-topologies:
+Sub-topology: 0
+	Source:  KSTREAM-SOURCE-0000000000 (topics: [conversation-meta])
+	--> KSTREAM-TRANSFORM-0000000001
+	Processor: KSTREAM-TRANSFORM-0000000001 (stores: [conversation-meta-state])
+	--> KSTREAM-KEY-SELECT-0000000002
+	<-- KSTREAM-SOURCE-0000000000
+	Processor: KSTREAM-KEY-SELECT-0000000002 (stores: [])
+	--> KSTREAM-FILTER-0000000005
+	<-- KSTREAM-TRANSFORM-0000000001
+	Processor: KSTREAM-FILTER-0000000005 (stores: [])
+	--> KSTREAM-SINK-0000000004
+	<-- KSTREAM-KEY-SELECT-0000000002
+	Sink: KSTREAM-SINK-0000000004 (topic: count-resolved-repartition)
+	<-- KSTREAM-FILTER-0000000005
+Sub-topology: 1
+	Source: KSTREAM-SOURCE-0000000006 (topics: [count-resolved-repartition])
+	--> KSTREAM-AGGREGATE-0000000003
+	Processor: KSTREAM-AGGREGATE-0000000003 (stores: [count-resolved])
+	--> KTABLE-TOSTREAM-0000000007
+	<-- KSTREAM-SOURCE-0000000006
+	Processor: KTABLE-TOSTREAM-0000000007 (stores: [])
+	--> KSTREAM-SINK-0000000008
+	<-- KSTREAM-AGGREGATE-0000000003
+	Sink: KSTREAM-SINK-0000000008 (topic: streams-count-resolved)
+	<-- KTABLE-TOSTREAM-0000000007
 `;
+
+	input.value = defaultTopology;
+	label.value = DEFAULT_LABEL;
+}
+
+function renderDisplayTypeD3(dotCode) {
+	while(output.firstChild && output.removeChild(output.firstChild));
+	d3.select("#output").graphviz()
+		.fade(false)
+		.renderDot(dotCode);
+}
+
+function renderDisplayTypeStandard(dotCode) {
+	while(output.firstChild && output.removeChild(output.firstChild));
+	let params = {
+		engine: 'dot',
+		format: 'svg'
+	};
+
+	graphviz_code.value = dotCode;
+	output.innerHTML = Viz(dotCode, params);
+}
+
+function scheduleUpdate() {
+	if (_pending)
+		clearTimeout(_pending);
+
+	_pending = setTimeout(() => {
+		_pending = null;
+		update();
+	}, 200);
+}
+
+function store() {
+	sessionStorage.setItem(STORAGE_KEY, JSON.stringify(_data));
+}
+
+function storeDisplayType(value) {
+	_data.displayType = value;
+	store();
 }
 
 function update() {
-	var topo = input.value;
-	var dotCode = convertTopoToDot(topo);
+	let labelValue = label.value;
+	if (!labelValue || (labelValue === '')) 
+		labelValue = '';
+	let topology = input.value;
+	if (!topology || (topology === '')) 
+		topology = '';
+
+	let dotCode = convertTopologyToDot(topology, labelValue);
 	if (DEBUG)
 		console.log('dot code\n', dotCode);
 
-	var params = {
-		engine: 'dot',
-		format: 'svg'
-  	};
-  	
 	try {
-		graphviz_code.value = dotCode;
-		svg_container.innerHTML = Viz(dotCode, params);
-	    
-		sessionStorage.setItem(STORAGE_KEY, topo);
+		switch (_displayType) {
+			case DISPLAY_TYPE_D3:
+				renderDisplayTypeD3(dotCode);
+				break;
+			default:
+				renderDisplayTypeStandard(dotCode);
+				break;
+		}
+
+		_data.label = labelValue;
+		_data.topology = topology;
+		store();
 	}
 	catch (e) {
 		console.error('Exception generating graph', e && e.stack || e);
@@ -130,10 +273,5 @@ function update() {
 }
 
 // startup
-var topo;
-if (!topo)
-	topo = sessionStorage.getItem(STORAGE_KEY);
-
-if (topo) 
-	input.value = topo;
-update();
+initialize();
+scheduleUpdate();
