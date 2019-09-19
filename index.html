@@ -1,20 +1,13 @@
+<!DOCTYPE html>
 <html>
   <body>
 	<link href="https://fonts.googleapis.com/css?family=Cabin+Sketch" rel="stylesheet">
 	<style>
-		body {
-			font-family: 'Cabin Sketch', cursive;
-		}
-
 		textarea {
 			font-family: 'monospace';
 			width: 400px;
 			height: 400px;
 	  	}
-
-		#graphviz_code, #svg_container {
-			display: none;
-		}
 
 		container {
 			display: flex;
@@ -28,12 +21,12 @@
 			color: #999;
 		}
 	</style>
-	<script src="vendor/viz-lite.js"></script>
-	<script src="vendor/rough.min.js"></script>
+	<script src="vendor/viz.js"></script>
+	<script src="vendor/full.render.js"></script>
 
 	<h2>Kafka Streams Topology Visualizer</h2>
 
-	Converts an ASCII Kafka Topology description into a hand drawn diagram. <a href="https://github.com/zz85/kafka-streams-viz">Github link</a>.
+	Converts an ASCII Kafka Topology description into a graphViz diagram. <a href="https://github.com/zz85/kafka-streams-viz">Github link</a>.
 
 	<container>
 		<div>
@@ -68,15 +61,15 @@ Sub-topology: 1
 	<-- KTABLE-TOSTREAM-0000000007
 			</textarea>
 		</div>
-
 		<div>
-			<h4>Output Sketch Diagram</h4>
-			<canvas id="canvas"></canvas>
-		</div>
-	</container>>
-
+			<h4>GraphViz</h4>
 	<textarea id="graphviz_code"></textarea>
+		</div>
+		<div>
+			<h4>Output Diagram</h4>
 	<div id="svg_container"></div>
+		</div>
+	</container>
 
 	<div id="results"></div>
 	<script src="main.js"></script>
